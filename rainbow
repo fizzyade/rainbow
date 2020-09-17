@@ -47,6 +47,8 @@
 
 import json
 import sys
+import pdftotext
+import re
 
 def parsePlus3Source(filename):
 	functionTable = []
@@ -153,6 +155,39 @@ def parseSource(filename, machine, startAtAddress):
 
 	return functionTable
 
+def parseNextDoc(filename):
+	with open(filename, "rb") as fp:
+		pdf = pdftotext.PDF(fp)
+
+		pageLines = []
+
+		api_match_1 = re.compile("^(?P<hex>[0-9|A-F|a-f]*)h(\s*)\((?P<dec>[0-9]*)\)$")
+		api_match_2 = re.compile("^(?P<name>[a-z|A-Z|_]*)(\s*)\(\$(?P<hex>[0-9|A-F|a-f]*)\)$")
+		api_match_3 = re.compile("^;(\s*)\*\s(?P<name>[A-Z|_]*)\s\(\$(?P<hex>[0-9|a-f|A-F]*)\)(\s*)\*$")
+
+		for page in pdf:
+			pageLines += page.splitlines()[:-2]
+
+		previousLines = []
+
+		for line in pageLines:
+			m = api_match_1.match(line)
+
+			if m:
+				print(previousLines[-1]+" "+m.group('hex'))
+				previousLines = []
+			else:
+				m = api_match_2.match(line)
+
+				if m:
+					print(m.group('name')+" "+m.group('hex'))
+				else:
+					m = api_match_3.match(line)
+					if m:
+						print(m.group('name')+" "+m.group('hex'))
+
+			previousLines.append(line)
+
 # use the 48K, 128K and +3 rom source files to extract the ROM function entry points
 
 romTable = []
@@ -163,7 +198,9 @@ romTable += parsePlus3Source("./sources/Spectrum+3_V4-0_ROM2.asm")
 
 # use nextregs
 
-print(json.dumps(romTable, indent=4))
+parseNextDoc("./sources/docs_nextzxos_NextZXOS_and_esxDOS_APIs.pdf")
+
+#print(json.dumps(romTable, indent=4))
 
 
 
