@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+
+# rainbow 
+#
+# Copyright (C) 2020 Adrian Carpenter (adrian@nedrysoft.com)
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a 
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+#
+
+# Tool for extracting information on ZX Spectrum/ZX Spectrum Next sources & documents.
+#
+# Produces a JSON document which can then be used to produce assembler include files, C headers, documentation as per the users style or requirements.
+#
+# Credits:
+#
+# The ROM dissasemblies from the following GitHub repository are required:
+#
+# https://github.com/ZXSpectrumVault/rom-disassemblies
+#
+# Requires the following files:
+# 
+# * Spectrum48.asm
+# * Spectrum128_ROM1.asm
+# * Spectrum+3_V4-0_ROM2.asm
+#
+# These files should be placed in a folder named sources.
+#
+# The ZX Spectrum Next registers document is also scanned and information extracted, the following file is required:
+#
+# https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/blob/master/cores/zxnext/nextreg.txt
+
+import json
+import sys
+
+def parsePlus3Source(filename):
+	functionTable = []
+
+	try:
+		with open(filename) as fp:
+			line = fp.readline()
+			
+			lines = []
+
+			while line:
+				line = fp.readline()
+
+				if (line.startswith("; The DOS routines jump block")):
+					while line:
+						line = fp.readline()
+
+						if (line.startswith('.l')):
+							break;
+
+					while(line):
+						if not line.startswith('.l'):
+							break
+
+						address = line[2:6]
+
+						commentIndex = line.find("; ")
+
+						newEntry = {}
+
+						newEntry["name"] = line[commentIndex+2:].lstrip().rstrip()
+						newEntry["address"] = "0x"+address
+						newEntry["machine"] = "128K+3"
+
+						functionTable.append(newEntry)
+
+						line = fp.readline()
+	except:
+		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
+
+	return functionTable
+
+def parseSource(filename, machine, startAtAddress):
+	functionTable = []
+
+	try:
+		with open(filename) as fp:
+			line = fp.readline()
+			
+			lines = []
+
+			while line:
+				line = fp.readline()
+
+				lines.append(line)
+
+				if (line.startswith(";; ")):
+					description = []
+
+					for previousLine in reversed(lines[0:-1]):
+
+						if (previousLine.startswith("; -------------------")):
+							break
+
+						description.append(previousLine)
+
+					label = fp.readline()
+
+					if (label.startswith("L")):
+						address = label[1:label.find(":")]
+
+						if (not address == -1):
+							newEntry = {}
+
+							newEntry["name"] = line[3:].rstrip()
+							newEntry["address"] = "0x"+address
+							newEntry["machine"] = machine
+
+							commentBlock = ""
+
+							for commentLine in reversed(description):
+								commentIndex = commentLine.find(";")
+
+								if (not commentIndex == -1):
+									commentLine = commentLine[commentIndex+1:].lstrip().rstrip();
+
+									if (not commentLine.startswith("(Offset $")):
+										commentBlock += commentLine+"\n"
+
+							newEntry["description"] = commentBlock
+
+							if (int(address,16)>=startAtAddress):
+								functionTable.append(newEntry)
+
+					lines = []
+
+					while line:
+						line = fp.readline()
+
+						if (line.startswith("; -------------------")):
+							break
+	except:
+		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
+
+	return functionTable
+
+# use the 48K, 128K and +3 rom source files to extract the ROM function entry points
+
+romTable = []
+
+romTable += parseSource("./sources/Spectrum48.asm", "48K", 0x0000)
+romTable += parseSource('./sources/Spectrum128_ROM1.asm', "128K", 0x386E)
+romTable += parsePlus3Source("./sources/Spectrum+3_V4-0_ROM2.asm")
+
+# use nextregs
+
+print(json.dumps(romTable, indent=4))
+
+
+
