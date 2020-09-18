@@ -22,16 +22,25 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 #
-
-# Tool for extracting information on ZX Spectrum/ZX Spectrum Next sources & documents.
 #
-# Produces a JSON document which can then be used to produce assembler include files, C headers, documentation as per the users style or requirements.
+# Tool for extracting functions, variables, registers and ports on ZX Spectrum/ZX Spectrum Next sources & documents.
 #
-# Credits:
+# Creates a JSON document which can then be used to produce custom files such as:
+#
+# * assembler include files.
+# * C header files.
+# * Developer documentation.
+#
+# Links:
 # 
-# [ZX Spectrum ROM Dissassemblies](https://github.com/ZXSpectrumVault/rom-disassemblies/tree/master/Spectrum%2048K/Spectrum48.asm)
-# [NextZXOS+esxDOS API Docuementation](https://gitlab.com/thesmog358/tbblue/-/blob/master/docs/nextzxos/NextZXOS_and_esxDOS_APIs.pdf)
-# [ZX Spectrum NextReg Definitions](https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/blob/master/cores/zxnext/nextreg.txt)
+# * https://www.specnext.com
+# * https://github.com/ZXSpectrumVault/rom-disassemblies
+# * https://gitlab.com/thesmog358/tbblue/
+# * https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/
+#
+# This project would not be possible without the hard work of the developers who have documented 
+# the original ZX Spectrum ROM's and those who have produced documentation for the ZX Spectrum Next.
+
 
 import json
 import sys
@@ -82,8 +91,10 @@ def parsePlus3Source(filename, arch, source):
 						functionTable.append(newEntry)
 
 						line = fp.readline()
+
+			fp.close()
 	except:
-		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
+		print("Error: Unable to load "+filename+", skipping. [Parse +3 Functions]", file=sys.stderr)
 
 	return [{"arch":arch, "source:":source, "functions":functionTable}]
 
@@ -172,8 +183,10 @@ def parseSource(filename, arch, startAtAddress, source):
 
 						if m:
 							break
+			fp.close()
+
 	except:
-		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
+		print("Error: Unable to load "+filename+", skipping. [Parse Functions]", file=sys.stderr)
 
 	return [{"arch":arch, "source:":source, "functions":functionTable}]
 
@@ -185,6 +198,7 @@ def parseNextDoc(filename, arch, source):
 
 		pageLines = []
 
+		api_table_match = re.compile("(?i)^(?P<status>[*\|\%]*)(?P<name>[A-Z|0-9|_]+)(\s*)\(\$(?P<address>[0-9|a-f]*)\)(\s*)(?P<description>.*)$")
 		api_match_1 = re.compile("(?i)^(?P<hex>[0-9|a-f]*)h(\s*)\((?P<dec>[0-9]*)\)$")
 		api_match_2 = re.compile("(?i)^(?P<name>[a-z|_]*)(\s*)\(\$(?P<hex>[0-9|a-f]*)\)$")
 		api_match_3 = re.compile("(?i)^;(\s*)\*\s(?P<name>[a-z|_]*)\s\(\$(?P<hex>[0-9|a-f]*)\)(\s*)\*$")
@@ -193,6 +207,27 @@ def parseNextDoc(filename, arch, source):
 			pageLines += page.splitlines()[:-2]
 
 		previousLines = []
+
+		# find and parse the API table (gives us information on new or modified calls)
+
+		apiTable = []
+
+		for line in pageLines:
+			m = api_table_match.match(line)
+
+			if m:
+				apiEntry = {
+					"status": m.group("status"),
+					"name": m.group("name"),
+					"address": m.group("address"),
+					"description": m.group("description")
+				}
+
+				apiTable.append(apiEntry)
+
+		#print(apiTable)
+
+		# find each api function section
 
 		for line in pageLines:
 			m = api_match_1.match(line)
@@ -218,18 +253,56 @@ def parseNextDoc(filename, arch, source):
 						hexValue = m.group('hex');
 
 			if hexValue and functionName:
-				hexValue = "{0:#0{1}x}".format(int(hexValue, 16),6)
-
 				newEntry = {}
 
 				newEntry["name"] = functionName.upper()
-				newEntry["address"] = hexValue
+				newEntry["address"] = "{0:#0{1}x}".format(int(hexValue, 16),6)
 
 				functionTable.append(newEntry)
 
 			previousLines.append(line)
 
+		fp.close()
+
 	return [{"arch":arch, "source:":source, "functions":functionTable}]
+
+def parseSystemVariables(filename):
+	variablesTable = []
+
+	sysvars_match = re.compile("(?i)^(\s*)defc(\s*)(?P<name>[A-Z|0-9|_]*)=\$(?P<address>[0-9|a-f]*)(\s*)((;(\s*)(?P<comment>.*)$)|$)")
+	plus3dos_match = re.compile("(?i)^(\s*)\;(\s*)\+3DOS routine addresses(\s*)$")
+
+	try:
+		with open(filename) as fp:
+			line = fp.readline()
+
+			while line:
+				m = plus3dos_match.match(line)
+
+				if m:
+					break
+
+				m = sysvars_match.match(line)
+
+				if m:
+					entry = {
+						"name" : m.group("name"),
+						"address" : "{0:#0{1}x}".format(int(m.group('address'), 16),6)
+					}
+
+					if (m.group("comment") is not None):
+						entry["comment"] = m.group("comment");
+
+					variablesTable.append(entry)
+
+				line = fp.readline()
+
+			fp.close()
+
+	except:
+		print("Error: Unable to load "+filename+", skipping. [Parse System Variables]", file=sys.stderr)
+
+	return variablesTable
 
 def parseNextRegs(filename):
 	registerTable = []
@@ -244,18 +317,18 @@ def parseNextRegs(filename):
 				m = register_match.match(line)
 
 				if m:
-					hexValue = "{0:#0{1}x}".format(int(m.group('hex'), 16),6)
-
 					entry = {
 						"name": m.group('name'), 
-						"address" : hexValue
+						"address" : "{0:#0{1}x}".format(int(m.group('hex'), 16),6)
 					}
 
 					registerTable.append(entry)
 
 				line = fp.readline()
+
+			fp.close()
 	except:
-		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
+		print("Error: Unable to load "+filename+", skipping. [Parse Next Registers]", file=sys.stderr)
 
 	return registerTable
 
@@ -289,6 +362,7 @@ if curl:
 
 romTable = []
 nextRegsTable = []
+portsTable = []
 
 # prepare for download 
 
@@ -319,6 +393,10 @@ romTable += parseNextDoc("./sources/NextZXOS_and_esxDOS_APIs.pdf", "NEXT", "http
 
 nextRegsTable += parseNextRegs("./sources/nextreg.txt")
 
+# +3 source has list of variables including 49K only, parse for complete list.
+
+systemVariablesTable = parseSystemVariables("./sources/Spectrum+3_V4-0_ROM2.asm")
+
 # create JSON output
 
 doc = {
@@ -328,7 +406,9 @@ doc = {
 		"created":str(datetime.datetime.now())
 	},
 	"ROM" : romTable,
-	"NEXTREGS" : nextRegsTable
+	"NEXTREGS" : nextRegsTable,
+	"SYSVARS" : systemVariablesTable,
+	"PORTS" : portsTable
 }
 
 if args.output:
