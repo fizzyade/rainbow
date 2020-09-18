@@ -29,17 +29,12 @@
 #
 # Credits:
 #
-# The ROM dissasemblies from the following GitHub repository are required:
-#
-# https://github.com/ZXSpectrumVault/rom-disassemblies
-#
-# Requires the following files:
+# Requires the following files to be placed in the sources folder:
 # 
-# * Spectrum48.asm
-# * Spectrum128_ROM1.asm
-# * Spectrum+3_V4-0_ROM2.asm
-#
-# These files should be placed in a folder named sources.
+# * [48K ROM Dissassembly](https://github.com/ZXSpectrumVault/rom-disassemblies/tree/master/Spectrum%2048K/Spectrum48.asm)
+# * [128K ROM Dissassembly](https://github.com/ZXSpectrumVault/rom-disassemblies/tree/master/Spectrum%20128K/Spectrum128_ROM1.asm)
+# * [128K+3 ROM Dissassembly](https://github.com/ZXSpectrumVault/rom-disassemblies/tree/master/Spectrum%20128K%20%2B3/Spectrum+3_V4-0_ROM2.asm)
+# * [NextZXOS+esxDOS API Docuementation](https://gitlab.com/thesmog358/tbblue/-/blob/master/docs/nextzxos/NextZXOS_and_esxDOS_APIs.pdf)
 #
 # The ZX Spectrum Next registers document is also scanned and information extracted, the following file is required:
 #
@@ -53,6 +48,9 @@ import re
 def parsePlus3Source(filename):
 	functionTable = []
 
+	header_match = re.compile("^;(\s*)The DOS routines jump block(\s*)$")
+	function_match = re.compile("(?i)^\.l(?P<address>[0-9|a-f]*)(.*);(\s*)(?P<name>.*)(\s*)$")
+
 	try:
 		with open(filename) as fp:
 			line = fp.readline()
@@ -62,25 +60,27 @@ def parsePlus3Source(filename):
 			while line:
 				line = fp.readline()
 
-				if (line.startswith("; The DOS routines jump block")):
+				m = header_match.match(line)
+
+				if m:
 					while line:
 						line = fp.readline()
 
-						if (line.startswith('.l')):
+						m = function_match.match(line)
+
+						if m:
 							break;
 
 					while(line):
-						if not line.startswith('.l'):
+						m = function_match.match(line)
+
+						if not m:
 							break
-
-						address = line[2:6]
-
-						commentIndex = line.find("; ")
 
 						newEntry = {}
 
-						newEntry["name"] = line[commentIndex+2:].lstrip().rstrip()
-						newEntry["address"] = "0x"+address
+						newEntry["name"] = m.group('name').upper()
+						newEntry["address"] = "{0:#0{1}x}".format(int(m.group('address'), 16),6)
 						newEntry["machine"] = "128K+3"
 
 						functionTable.append(newEntry)
@@ -94,6 +94,15 @@ def parsePlus3Source(filename):
 def parseSource(filename, machine, startAtAddress):
 	functionTable = []
 
+	label_match = re.compile("^L(?P<hex>[0-9|A-F|a-f]*):.*$")
+	description_match = re.compile("^;;(\s*)(?P<name>[A-Z|a-z|0-9|_|-]*)(\s*)$")
+	comment_match = re.compile("^;(\s*)(\-*)$")
+
+	ignore_matches = []
+
+	ignore_matches.append(re.compile("(?i)^\(offset\:(\s*)\$([0-9|A-F|a-f]*)(.*)\)$"))
+	ignore_matches.append(re.compile("(?i)^\(offset(\s*)\$([0-9|A-F|a-f]*)\:(.*)\)$"))
+
 	try:
 		with open(filename) as fp:
 			line = fp.readline()
@@ -105,50 +114,68 @@ def parseSource(filename, machine, startAtAddress):
 
 				lines.append(line)
 
-				if (line.startswith(";; ")):
+				m = description_match.match(line)
+				
+				if m:
+					name = m.group('name')
+
 					description = []
 
 					for previousLine in reversed(lines[0:-1]):
 
-						if (previousLine.startswith("; -------------------")):
+						m = comment_match.match(previousLine)
+
+						if m:
 							break
 
 						description.append(previousLine)
 
 					label = fp.readline()
 
-					if (label.startswith("L")):
-						address = label[1:label.find(":")]
+					m = label_match.match(label)
 
-						if (not address == -1):
-							newEntry = {}
+					if m:
+						address = m.group('hex')
 
-							newEntry["name"] = line[3:].rstrip()
-							newEntry["address"] = "0x"+address
-							newEntry["machine"] = machine
+						newEntry = {}
 
-							commentBlock = ""
+						newEntry["name"] = name.upper()
+						newEntry["address"] = "{0:#0{1}x}".format(int(address, 16),6)
+						newEntry["machine"] = machine
 
-							for commentLine in reversed(description):
-								commentIndex = commentLine.find(";")
+						commentBlock = ""
 
-								if (not commentIndex == -1):
-									commentLine = commentLine[commentIndex+1:].lstrip().rstrip();
+						for commentLine in reversed(description):
+							commentIndex = commentLine.find(";")
 
-									if (not commentLine.startswith("(Offset $")):
-										commentBlock += commentLine+"\n"
+							if (not commentIndex == -1):
+								commentLine = commentLine[commentIndex+1:].lstrip().rstrip();
 
-							newEntry["description"] = commentBlock
+								ignoreLine = False
 
-							if (int(address,16)>=startAtAddress):
-								functionTable.append(newEntry)
+								for match in ignore_matches:
+									m = match.match(commentLine)
+
+									if m:
+										ignoreLine = True
+										break
+
+								if ignoreLine==False:
+									commentBlock += commentLine+"\n"
+
+						newEntry["description"] = commentBlock
+
+						if (int(address,16)>=startAtAddress):
+							functionTable.append(newEntry)
 
 					lines = []
 
 					while line:
 						line = fp.readline()
 
-						if (line.startswith("; -------------------")):
+						m = comment_match.match(line)
+
+						if m:
 							break
 	except:
 		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
@@ -156,6 +183,8 @@ def parseSource(filename, machine, startAtAddress):
 	return functionTable
 
 def parseNextDoc(filename):
+	functionTable = []
+
 	with open(filename, "rb") as fp:
 		pdf = pdftotext.PDF(fp)
 
@@ -173,34 +202,60 @@ def parseNextDoc(filename):
 		for line in pageLines:
 			m = api_match_1.match(line)
 
+			hexValue = None
+			functionName = None
+
 			if m:
-				print(previousLines[-1]+" "+m.group('hex'))
+				hexValue = m.group('hex');
+				functionName = previousLines[-1];
+
 				previousLines = []
 			else:
 				m = api_match_2.match(line)
 
 				if m:
-					print(m.group('name')+" "+m.group('hex'))
+					functionName = m.group('name');
+					hexValue = m.group('hex');
 				else:
 					m = api_match_3.match(line)
 					if m:
-						print(m.group('name')+" "+m.group('hex'))
+						functionName = m.group('name');
+						hexValue = m.group('hex');
+
+			if hexValue and functionName:
+				hexValue = "{0:#0{1}x}".format(int(hexValue, 16),6)
+
+				newEntry = {}
+
+				newEntry["name"] = functionName.upper()
+				newEntry["address"] = hexValue
+				newEntry["machine"] = "NEXT"
+
+				functionTable.append(newEntry)
 
 			previousLines.append(line)
 
-# use the 48K, 128K and +3 rom source files to extract the ROM function entry points
+	return functionTable
+
+# use the 48K, 128K and +3 rom source files to extract the ROM function entry points.  Use the NextZXOS & esxDOS reference manual to get NEXT function entry ppints.
 
 romTable = []
 
 romTable += parseSource("./sources/Spectrum48.asm", "48K", 0x0000)
 romTable += parseSource('./sources/Spectrum128_ROM1.asm', "128K", 0x386E)
 romTable += parsePlus3Source("./sources/Spectrum+3_V4-0_ROM2.asm")
+romTable += parseNextDoc("./sources/docs_nextzxos_NextZXOS_and_esxDOS_APIs.pdf")
 
-# use nextregs
+# use the nextregs.txt file to obtain the NextReg definitions
 
-parseNextDoc("./sources/docs_nextzxos_NextZXOS_and_esxDOS_APIs.pdf")
+nextRegsTable = []
 
-#print(json.dumps(romTable, indent=4))
+doc = {
+	"ROM" : romTable,
+	"NEXTREGS" : nextRegsTable
+}
+
+print(json.dumps(doc, indent=4))
 
 
 
