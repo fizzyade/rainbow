@@ -28,27 +28,24 @@
 # Produces a JSON document which can then be used to produce assembler include files, C headers, documentation as per the users style or requirements.
 #
 # Credits:
-#
-# Requires the following files to be placed in the sources folder:
 # 
-# * [48K ROM Dissassembly](https://github.com/ZXSpectrumVault/rom-disassemblies/tree/master/Spectrum%2048K/Spectrum48.asm)
-# * [128K ROM Dissassembly](https://github.com/ZXSpectrumVault/rom-disassemblies/tree/master/Spectrum%20128K/Spectrum128_ROM1.asm)
-# * [128K+3 ROM Dissassembly](https://github.com/ZXSpectrumVault/rom-disassemblies/tree/master/Spectrum%20128K%20%2B3/Spectrum+3_V4-0_ROM2.asm)
-# * [NextZXOS+esxDOS API Docuementation](https://gitlab.com/thesmog358/tbblue/-/blob/master/docs/nextzxos/NextZXOS_and_esxDOS_APIs.pdf)
-#
-# The ZX Spectrum Next registers document is also scanned and information extracted, the following file is required:
-#
-# https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/blob/master/cores/zxnext/nextreg.txt
+# [ZX Spectrum ROM Dissassemblies](https://github.com/ZXSpectrumVault/rom-disassemblies/tree/master/Spectrum%2048K/Spectrum48.asm)
+# [NextZXOS+esxDOS API Docuementation](https://gitlab.com/thesmog358/tbblue/-/blob/master/docs/nextzxos/NextZXOS_and_esxDOS_APIs.pdf)
+# [ZX Spectrum NextReg Definitions](https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/blob/master/cores/zxnext/nextreg.txt)
 
 import json
 import sys
 import pdftotext
 import re
+import argparse
+import subprocess
+import os
+import datetime
 
-def parsePlus3Source(filename):
+def parsePlus3Source(filename, arch, source):
 	functionTable = []
 
-	header_match = re.compile("^;(\s*)The DOS routines jump block(\s*)$")
+	header_match = re.compile("(?i)^;(\s*)The DOS routines jump block(\s*)$")
 	function_match = re.compile("(?i)^\.l(?P<address>[0-9|a-f]*)(.*);(\s*)(?P<name>.*)(\s*)$")
 
 	try:
@@ -81,7 +78,6 @@ def parsePlus3Source(filename):
 
 						newEntry["name"] = m.group('name').upper()
 						newEntry["address"] = "{0:#0{1}x}".format(int(m.group('address'), 16),6)
-						newEntry["machine"] = "128K+3"
 
 						functionTable.append(newEntry)
 
@@ -89,19 +85,19 @@ def parsePlus3Source(filename):
 	except:
 		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
 
-	return functionTable
+	return [{"arch":arch, "source:":source, "functions":functionTable}]
 
-def parseSource(filename, machine, startAtAddress):
+def parseSource(filename, arch, startAtAddress, source):
 	functionTable = []
 
-	label_match = re.compile("^L(?P<hex>[0-9|A-F|a-f]*):.*$")
-	description_match = re.compile("^;;(\s*)(?P<name>[A-Z|a-z|0-9|_|-]*)(\s*)$")
-	comment_match = re.compile("^;(\s*)(\-*)$")
+	label_match = re.compile("(?i)^L(?P<hex>[0-9|a-f]*):.*$")
+	description_match = re.compile("(?i)^;;(\s*)(?P<name>[a-z|0-9|_|-]*)(\s*)$")
+	comment_match = re.compile("(?i)^;(\s*)(\-*)$")
 
 	ignore_matches = []
 
-	ignore_matches.append(re.compile("(?i)^\(offset\:(\s*)\$([0-9|A-F|a-f]*)(.*)\)$"))
-	ignore_matches.append(re.compile("(?i)^\(offset(\s*)\$([0-9|A-F|a-f]*)\:(.*)\)$"))
+	ignore_matches.append(re.compile("(?i)^\(offset\:(\s*)\$([0-9|a-f]*)(.*)\)$"))
+	ignore_matches.append(re.compile("(?i)^\(offset(\s*)\$([0-9|a-f]*)\:(.*)\)$"))
 
 	try:
 		with open(filename) as fp:
@@ -141,7 +137,6 @@ def parseSource(filename, machine, startAtAddress):
 
 						newEntry["name"] = name.upper()
 						newEntry["address"] = "{0:#0{1}x}".format(int(address, 16),6)
-						newEntry["machine"] = machine
 
 						commentBlock = ""
 
@@ -180,9 +175,9 @@ def parseSource(filename, machine, startAtAddress):
 	except:
 		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
 
-	return functionTable
+	return [{"arch":arch, "source:":source, "functions":functionTable}]
 
-def parseNextDoc(filename):
+def parseNextDoc(filename, arch, source):
 	functionTable = []
 
 	with open(filename, "rb") as fp:
@@ -190,9 +185,9 @@ def parseNextDoc(filename):
 
 		pageLines = []
 
-		api_match_1 = re.compile("^(?P<hex>[0-9|A-F|a-f]*)h(\s*)\((?P<dec>[0-9]*)\)$")
-		api_match_2 = re.compile("^(?P<name>[a-z|A-Z|_]*)(\s*)\(\$(?P<hex>[0-9|A-F|a-f]*)\)$")
-		api_match_3 = re.compile("^;(\s*)\*\s(?P<name>[A-Z|_]*)\s\(\$(?P<hex>[0-9|a-f|A-F]*)\)(\s*)\*$")
+		api_match_1 = re.compile("(?i)^(?P<hex>[0-9|a-f]*)h(\s*)\((?P<dec>[0-9]*)\)$")
+		api_match_2 = re.compile("(?i)^(?P<name>[a-z|_]*)(\s*)\(\$(?P<hex>[0-9|a-f]*)\)$")
+		api_match_3 = re.compile("(?i)^;(\s*)\*\s(?P<name>[a-z|_]*)\s\(\$(?P<hex>[0-9|a-f]*)\)(\s*)\*$")
 
 		for page in pdf:
 			pageLines += page.splitlines()[:-2]
@@ -229,31 +224,115 @@ def parseNextDoc(filename):
 
 				newEntry["name"] = functionName.upper()
 				newEntry["address"] = hexValue
-				newEntry["machine"] = "NEXT"
 
 				functionTable.append(newEntry)
 
 			previousLines.append(line)
 
-	return functionTable
+	return [{"arch":arch, "source:":source, "functions":functionTable}]
+
+def parseNextRegs(filename):
+	registerTable = []
+
+	register_match = re.compile("(?i)^0x(?P<hex>[0-9|A-F]*)(\s*)\(([0-9]*)\)(\s*)=>(\s*)(?P<name>.*)(\s*)$")
+
+	try:
+		with open(filename) as fp:
+			line = fp.readline()
+
+			while line:
+				m = register_match.match(line)
+
+				if m:
+					hexValue = "{0:#0{1}x}".format(int(m.group('hex'), 16),6)
+
+					entry = {
+						"name": m.group('name'), 
+						"address" : hexValue
+					}
+
+					registerTable.append(entry)
+
+				line = fp.readline()
+	except:
+		print("Error: Unable to load "+filename+", skipping.", file=sys.stderr)
+
+	return registerTable
+
+def execute(command):
+    output = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return(output.returncode, output.stdout.decode('utf-8'))
+
+def which(appname):
+    command = 'which'
+
+    status, output = execute(f'{command} {appname}')
+
+    if status and output:
+        return(output.split()[0])
+
+# application entry point
+
+parser = argparse.ArgumentParser(description='Rainbow ZX Spectrum/Next development tool')
+
+parser.add_argument('--download', type=str, nargs='?', help='Download the required source documents.')
+parser.add_argument('--createjson', type=str, nargs='?', help='Generate the JSON document.')
+parser.add_argument('-of','--output', type=str, nargs='?')
+
+args = parser.parse_args()
+
+curl = which('curl')
+
+if curl:
+	print('Fatal: curl is required but could not be found.')
+	exit(1)
+
+romTable = []
+nextRegsTable = []
+
+# prepare for download 
+
+if not os.path.exists("./sources"):
+	os.makedirs("./sources")
+
+urlList = [
+	"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%2048K/Spectrum48.asm",
+	"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%20128K/Spectrum128_ROM1.asm",
+	"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%20128K%20%2B3/Spectrum+3_V4-0_ROM2.asm",
+	"https://gitlab.com/thesmog358/tbblue/-/raw/master/docs/nextzxos/NextZXOS_and_esxDOS_APIs.pdf",
+	"https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/raw/master/cores/zxnext/nextreg.txt"
+]
+
+# download required files from the url list
+
+for url in urlList:
+	resultCode, resultOutput = execute(f'cd ./sources; curl -LJO {url}')
 
 # use the 48K, 128K and +3 rom source files to extract the ROM function entry points.  Use the NextZXOS & esxDOS reference manual to get NEXT function entry ppints.
 
-romTable = []
-
-romTable += parseSource("./sources/Spectrum48.asm", "48K", 0x0000)
-romTable += parseSource('./sources/Spectrum128_ROM1.asm', "128K", 0x386E)
-romTable += parsePlus3Source("./sources/Spectrum+3_V4-0_ROM2.asm")
-romTable += parseNextDoc("./sources/docs_nextzxos_NextZXOS_and_esxDOS_APIs.pdf")
+romTable += parseSource("./sources/Spectrum48.asm", "48K", 0x0000, "https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies")
+romTable += parseSource('./sources/Spectrum128_ROM1.asm', "128K", 0x386E, "https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies")
+romTable += parsePlus3Source("./sources/Spectrum+3_V4-0_ROM2.asm", "128K+3", "https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies")
+romTable += parseNextDoc("./sources/NextZXOS_and_esxDOS_APIs.pdf", "NEXT", "https://gitlab.com/SpectrumNext")
 
 # use the nextregs.txt file to obtain the NextReg definitions
 
-nextRegsTable = []
+nextRegsTable += parseNextRegs("./sources/nextreg.txt")
+
+# create JSON output
 
 doc = {
+	"DETAILS": {
+		"info":"this file was automatically generated using the rainbow tool.",
+		"url":"https://github.com/fizzyade/rainbow",
+		"created":str(datetime.datetime.now())
+	},
 	"ROM" : romTable,
 	"NEXTREGS" : nextRegsTable
 }
+
+if args.output:
+	sys.stdout = open(args.output, "w")
 
 print(json.dumps(doc, indent=4))
 
