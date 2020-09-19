@@ -54,8 +54,8 @@ import datetime
 def parsePlus3Source(filename, arch, source):
 	functionTable = []
 
-	header_match = re.compile("(?i)^;(\s*)The DOS routines jump block(\s*)$")
-	function_match = re.compile("(?i)^\.l(?P<address>[0-9|a-f]*)(.*);(\s*)(?P<name>.*)(\s*)$")
+	header_match = re.compile(r"(?i)^;(\s*)The DOS routines jump block(\s*)$")
+	function_match = re.compile(r"(?i)^\.l(?P<address>[0-9|a-f]*)(.*);(\s*)(?P<name>.*)(\s*)$")
 
 	try:
 		with open(filename) as fp:
@@ -101,14 +101,14 @@ def parsePlus3Source(filename, arch, source):
 def parseSource(filename, arch, startAtAddress, source):
 	functionTable = []
 
-	label_match = re.compile("(?i)^L(?P<hex>[0-9|a-f]*):.*$")
-	description_match = re.compile("(?i)^;;(\s*)(?P<name>[a-z|0-9|_|-]*)(\s*)$")
-	comment_match = re.compile("(?i)^;(\s*)(\-*)$")
+	label_match = re.compile(r"(?i)^L(?P<hex>[0-9|a-f]*):.*$")
+	description_match = re.compile(r"(?i)^;;(\s*)(?P<name>[a-z|0-9|_|-]*)(\s*)$")
+	comment_match = re.compile(r"(?i)^;(\s*)(\-*)$")
 
 	ignore_matches = []
 
-	ignore_matches.append(re.compile("(?i)^\(offset\:(\s*)\$([0-9|a-f]*)(.*)\)$"))
-	ignore_matches.append(re.compile("(?i)^\(offset(\s*)\$([0-9|a-f]*)\:(.*)\)$"))
+	ignore_matches.append(re.compile(r"(?i)^\(offset\:(\s*)\$([0-9|a-f]*)(.*)\)$"))
+	ignore_matches.append(re.compile(r"(?i)^\(offset(\s*)\$([0-9|a-f]*)\:(.*)\)$"))
 
 	try:
 		with open(filename) as fp:
@@ -198,10 +198,10 @@ def parseNextDoc(filename, arch, source):
 
 		pageLines = []
 
-		api_table_match = re.compile("(?i)^(?P<status>[*\|\%]*)(?P<name>[A-Z|0-9|_]+)(\s*)\(\$(?P<address>[0-9|a-f]*)\)(\s*)(?P<description>.*)$")
-		api_match_1 = re.compile("(?i)^(?P<hex>[0-9|a-f]*)h(\s*)\((?P<dec>[0-9]*)\)$")
-		api_match_2 = re.compile("(?i)^(?P<name>[a-z|_]*)(\s*)\(\$(?P<hex>[0-9|a-f]*)\)$")
-		api_match_3 = re.compile("(?i)^;(\s*)\*\s(?P<name>[a-z|_]*)\s\(\$(?P<hex>[0-9|a-f]*)\)(\s*)\*$")
+		api_table_match = re.compile(r"(?i)^(?P<status>[*\|\%]*)(?P<name>[A-Z|0-9|_]+)(\s*)\(\$(?P<address>[0-9|a-f]*)\)(\s*)(?P<description>.*)$")
+		api_match_1 = re.compile(r"(?i)^(?P<hex>[0-9|a-f]*)h(\s*)\((?P<dec>[0-9]*)\)$")
+		api_match_2 = re.compile(r"(?i)^(?P<name>[a-z|_]*)(\s*)\(\$(?P<hex>[0-9|a-f]*)\)$")
+		api_match_3 = re.compile(r"(?i)^;(\s*)\*\s(?P<name>[a-z|_]*)\s\(\$(?P<hex>[0-9|a-f]*)\)(\s*)\*$")
 
 		for page in pdf:
 			pageLines += page.splitlines()[:-2]
@@ -269,8 +269,8 @@ def parseNextDoc(filename, arch, source):
 def parseSystemVariables(filename):
 	variablesTable = []
 
-	sysvars_match = re.compile("(?i)^(\s*)defc(\s*)(?P<name>[A-Z|0-9|_]*)=\$(?P<address>[0-9|a-f]*)(\s*)((;(\s*)(?P<comment>.*)$)|$)")
-	plus3dos_match = re.compile("(?i)^(\s*)\;(\s*)\+3DOS routine addresses(\s*)$")
+	sysvars_match = re.compile(r"(?i)^(\s*)defc(\s*)(?P<name>[A-Z|0-9|_]*)=\$(?P<address>[0-9|a-f]*)(\s*)((;(\s*)(?P<comment>.*)$)|$)")
+	plus3dos_match = re.compile(r"(?i)^(\s*)\;(\s*)\+3DOS routine addresses(\s*)$")
 
 	try:
 		with open(filename) as fp:
@@ -307,7 +307,7 @@ def parseSystemVariables(filename):
 def parseNextRegs(filename):
 	registerTable = []
 
-	register_match = re.compile("(?i)^0x(?P<hex>[0-9|A-F]*)(\s*)\(([0-9]*)\)(\s*)=>(\s*)(?P<name>.*)(\s*)$")
+	register_match = re.compile(r"(?i)^0x(?P<hex>[0-9|A-F]*)(\s*)\(([0-9]*)\)(\s*)=>(\s*)(?P<name>.*)(\s*)$")
 
 	try:
 		with open(filename) as fp:
@@ -332,6 +332,93 @@ def parseNextRegs(filename):
 
 	return registerTable
 
+def parseNextPorts(filename):
+	portsTable = []
+	lines = []
+
+	port_match = re.compile(r"(?i)^(\s*)\|(?P<read>[\*|\ ])\|(?P<write>[\*|\ ])\|\|(?P<d>([X|0|1]{4}))(\s*)(?P<c>([X|0|1]{4}))(\s*)(?P<b>([X|0|1]{4}))(\s*)(?P<a>([X|0|1]{4}))\|(\s*)0x(?P<address>[0-9|a-f| ]{4})(\s*)\|(?P<description>.*)\|(.*)$")
+
+	try:
+		with open(filename) as fp:
+			for line in fp:
+				lines.append(line)
+
+			fp.close()
+	except:
+		print("Error: Unable to load "+filename+", skipping. [Parse Next Ports]", file=sys.stderr)
+		return portsTable
+
+	"""
+	for line in lines:
+		m = port_match.match(line)
+
+		if m:
+			entry = {
+				"description": m.group('description').rstrip(), 
+				"address" : "{0:#0{1}x}".format(int(m.group('address'), 16),6)
+			}
+
+			portsTable.append(entry)
+	"""
+
+	port_match = re.compile(r"(?i)^0x(?P<address>[0-9|a-f]{2,4})\ (?P<name>.*)$")
+	access_match = re.compile(r"^\((?P<access>R|W|R\/W)\).*")
+	bit_match = re.compile(r"^bit\s(?P<bit>[0-9])\s=\s(?P<description>.*)")
+	bits_match = re.compile(r"(?i)^\s*bits\s*(?P<bits>[0-9]\:[0-9])(,?(?P<bit1>[0-9]))?(\s=\s)?(?P<description>.*)")
+	mask_match = re.compile(r"(?i)^(\s*)(?P<bits>[1|0]{2,8})\s=\s(?P<description>.*)")
+
+	lineIndex = 0
+
+	while lineIndex<len(lines):
+		portMatch = port_match.match(lines[lineIndex])
+
+		if portMatch:
+			address = portMatch.group("address")
+			name = portMatch.group("name")
+
+			lineIndex = lineIndex + 1
+		
+			while lineIndex<len(lines):
+				bitMatch = bit_match.match(lines[lineIndex])
+				bitsMatch = bits_match.match(lines[lineIndex])
+				portMatch = port_match.match(lines[lineIndex])
+				accessMatch = access_match.match(lines[lineIndex])
+				maskMatch = mask_match.match(lines[lineIndex])
+
+				if maskMatch:
+					print("  maskMatch:"+str(maskMatch.groups()))
+
+				if portMatch:
+					break
+
+				if accessMatch:
+					print("address "+address+" "+name+" "+accessMatch.group("access"))
+
+				if bitMatch:
+					print("  bitMatch:"+str(bitMatch.groups()))
+
+				if bitsMatch:
+					print("  bitsMatch:"+str(bitsMatch.groups()))
+
+				lineIndex = lineIndex+1			
+			
+		else:
+			lineIndex = lineIndex + 1
+
+	# a bit more specific expressions are needed to grab other information
+
+	dac_match = re.compile(r"(?i)DAC Channel(\s*)(?P<channel>[A-D])(\s{3})((?P<address1>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address2>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address3>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address4>(0x([a-f|0-9]{2}))|\s{3})|(\s{0,1})$)?(\s?)((?P<address5>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address6>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address7>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)")
+
+	
+	for line in lines:
+		m = dac_match.match(line)
+
+		if m:
+			print(m.groups())
+
+	return portsTable
+
+
 def execute(command):
     output = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return(output.returncode, output.stdout.decode('utf-8'))
@@ -350,7 +437,7 @@ parser = argparse.ArgumentParser(description='Rainbow ZX Spectrum/Next developme
 
 parser.add_argument('--download', type=str, nargs='?', help='Download the required source documents.')
 parser.add_argument('--createjson', type=str, nargs='?', help='Generate the JSON document.')
-parser.add_argument('-of','--output', type=str, nargs='?')
+parser.add_argument('-o','--output', type=str, nargs='?')
 
 args = parser.parse_args()
 
@@ -364,23 +451,25 @@ romTable = []
 nextRegsTable = []
 portsTable = []
 
-# prepare for download 
+if args.download:
+	# prepare for download 
 
-if not os.path.exists("./sources"):
-	os.makedirs("./sources")
+	if not os.path.exists("./sources"):
+		os.makedirs("./sources")
 
-urlList = [
-	"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%2048K/Spectrum48.asm",
-	"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%20128K/Spectrum128_ROM1.asm",
-	"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%20128K%20%2B3/Spectrum+3_V4-0_ROM2.asm",
-	"https://gitlab.com/thesmog358/tbblue/-/raw/master/docs/nextzxos/NextZXOS_and_esxDOS_APIs.pdf",
-	"https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/raw/master/cores/zxnext/nextreg.txt"
-]
+	urlList = [
+		"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%2048K/Spectrum48.asm",
+		"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%20128K/Spectrum128_ROM1.asm",
+		"https://raw.githubusercontent.com/ZXSpectrumVault/rom-disassemblies/master/Spectrum%20128K%20%2B3/Spectrum+3_V4-0_ROM2.asm",
+		"https://gitlab.com/thesmog358/tbblue/-/raw/master/docs/nextzxos/NextZXOS_and_esxDOS_APIs.pdf",
+		"https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/raw/master/cores/zxnext/nextreg.txt",
+		"https://gitlab.com/SpectrumNext/ZX_Spectrum_Next_FPGA/-/raw/master/cores/zxnext/ports.txt"
+	]
 
-# download required files from the url list
+	# download required files from the url list
 
-for url in urlList:
-	resultCode, resultOutput = execute(f'cd ./sources; curl -LJO {url}')
+	for url in urlList:
+		resultCode, resultOutput = execute(f'cd ./sources; curl -LJO {url}')
 
 # use the 48K, 128K and +3 rom source files to extract the ROM function entry points.  Use the NextZXOS & esxDOS reference manual to get NEXT function entry ppints.
 
@@ -396,6 +485,10 @@ nextRegsTable += parseNextRegs("./sources/nextreg.txt")
 # +3 source has list of variables including 49K only, parse for complete list.
 
 systemVariablesTable = parseSystemVariables("./sources/Spectrum+3_V4-0_ROM2.asm")
+
+# scrape the Next ports
+
+portsTable += parseNextPorts("./sources/ports.txt")
 
 # create JSON output
 
@@ -414,7 +507,7 @@ doc = {
 if args.output:
 	sys.stdout = open(args.output, "w")
 
-print(json.dumps(doc, indent=4))
+#print(json.dumps(doc, indent=4))
 
 
 
