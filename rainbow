@@ -333,6 +333,7 @@ def parseNextRegs(filename):
 	return registerTable
 
 def parseNextPorts(filename):
+	tempPortsTable = []
 	portsTable = []
 	lines = []
 
@@ -348,7 +349,8 @@ def parseNextPorts(filename):
 		print("Error: Unable to load "+filename+", skipping. [Parse Next Ports]", file=sys.stderr)
 		return portsTable
 
-	"""
+	# parse the table to get a list of ports, we can use this to verify all registers have been processed
+
 	for line in lines:
 		m = port_match.match(line)
 
@@ -358,14 +360,18 @@ def parseNextPorts(filename):
 				"address" : "{0:#0{1}x}".format(int(m.group('address'), 16),6)
 			}
 
-			portsTable.append(entry)
-	"""
+
+			tempPortsTable.append(entry)
+
+	# now parse the document extracting as much as we can
 
 	port_match = re.compile(r"(?i)^0x(?P<address>[0-9|a-f]{2,4})\ (?P<name>.*)$")
 	access_match = re.compile(r"^\((?P<access>R|W|R\/W)\).*")
 	bit_match = re.compile(r"^bit\s(?P<bit>[0-9])\s=\s(?P<description>.*)")
-	bits_match = re.compile(r"(?i)^\s*bits\s*(?P<bits>[0-9]\:[0-9])(,?(?P<bit1>[0-9]))?(\s=\s)?(?P<description>.*)")
+	bits_match = re.compile(r"(?i)^\s*bits\s*(?P<bits>[0-9]\:[0-9])(,?(?P<extrabit>[0-9]))?(\s=\s)?(?P<description>.*)")
 	mask_match = re.compile(r"(?i)^(\s*)(?P<bits>[1|0]{2,8})\s=\s(?P<description>.*)")
+	dac_match = re.compile(r"(?i)DAC Channel(\s*)(?P<channel>[A-D])(\s{3})((?P<address1>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address2>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address3>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address4>(0x([a-f|0-9]{2}))|\s{3})|(\s{0,1})$)?(\s?)((?P<address5>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address6>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address7>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)")
+	dac_value_match = re.compile(r"(?i)^(?P<value>[0-9]+)\s*=\s*(?P<name>.*)$")
 
 	lineIndex = 0
 
@@ -377,6 +383,18 @@ def parseNextPorts(filename):
 			name = portMatch.group("name")
 
 			lineIndex = lineIndex + 1
+
+			entry = {
+				"address" : "0x"+address,
+				"name" : name,
+			}
+
+			bitTable = []
+			maskTable = []
+			valueTable = []
+			dacValues = []
+
+			currentAccessMode = None
 		
 			while lineIndex<len(lines):
 				bitMatch = bit_match.match(lines[lineIndex])
@@ -384,37 +402,130 @@ def parseNextPorts(filename):
 				portMatch = port_match.match(lines[lineIndex])
 				accessMatch = access_match.match(lines[lineIndex])
 				maskMatch = mask_match.match(lines[lineIndex])
+				dacMatch = dac_match.match(lines[lineIndex])
+				dacValueMatch = dac_value_match.match(lines[lineIndex])
+
+				flushMask = False
 
 				if maskMatch:
-					print("  maskMatch:"+str(maskMatch.groups()))
+					maskEntry = {
+						"bits" : maskMatch.group("bits"),
+						"description" : maskMatch.group("description")
+					}
+
+					maskTable.append(maskEntry);
+
+				else:
+					if len(maskTable):
+						flushMask = True
+
+				if portMatch:
+					if len(maskTable):
+						flushMask = True
+
+				if accessMatch:
+					if len(maskTable):
+						flushMask = True
+
+					currentAccessMode = accessMatch.group("access")
+
+				if bitMatch:
+					if len(maskTable):
+						flushMask = True
+
+					bitEntry = {
+						"bit" : bitMatch.group("bit"),
+						"access" : currentAccessMode,
+						"descripton" : bitMatch.group("description")
+
+					}
+
+					bitTable.append(bitEntry)
+
+				if bitsMatch:
+					if len(maskTable):
+						flushMask = True
+
+					bitsArray = [
+						bitsMatch.group("bits")
+					]
+
+					if bitsMatch.group("extrabit"):
+						bitsArray.append("extrabit")
+
+					bitsEntry = {
+						"access" : currentAccessMode,
+						"descripton" : bitsMatch.group("description"),
+						"bits" : bitsArray
+					}
+
+					bitTable.append(bitsEntry)
+
+				if dacMatch:
+					registers = []
+
+					for i in range(0,7):
+						try:
+							if dacMatch.group("address"+str(i)):
+								value = dacMatch.group("address"+str(i)).lstrip().rstrip();
+
+								if (len(value)):
+									registerEntry = {
+										"id" : str(i),
+										"value" : value
+									}
+
+									registers.append(registerEntry)
+
+						except IndexError:
+							pass
+
+					dacEntry = {
+						"name": "DAC Channel "+dacMatch.group("channel"),
+						"values" : registers
+					}
+
+					valueTable.append(dacEntry)
+
+				if dacValueMatch:
+					dacEntry = {
+						"id": dacValueMatch.group("value"),
+						"name" : dacValueMatch.group("name")
+					}
+
+					dacValues.append(dacEntry)
+
+				if flushMask:
+					bitsEntry["mask"] = maskTable
+					maskTable = []
 
 				if portMatch:
 					break
 
-				if accessMatch:
-					print("address "+address+" "+name+" "+accessMatch.group("access"))
+				lineIndex = lineIndex+1	
 
-				if bitMatch:
-					print("  bitMatch:"+str(bitMatch.groups()))
-
-				if bitsMatch:
-					print("  bitsMatch:"+str(bitsMatch.groups()))
-
-				lineIndex = lineIndex+1			
+			if len(bitTable):
+				entry["fields"] = bitTable
 			
+			if len(valueTable):
+				entry["names"] = dacValues
+				entry["values"] = valueTable
+
+
+			portsTable.append(entry)
 		else:
 			lineIndex = lineIndex + 1
 
 	# a bit more specific expressions are needed to grab other information
 
-	dac_match = re.compile(r"(?i)DAC Channel(\s*)(?P<channel>[A-D])(\s{3})((?P<address1>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address2>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address3>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address4>(0x([a-f|0-9]{2}))|\s{3})|(\s{0,1})$)?(\s?)((?P<address5>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address6>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)((?P<address7>(0x([a-f|0-9]{2}))|\s{0,4})|(\s{0,1})$)?(\s?)")
-
 	
+	"""
 	for line in lines:
 		m = dac_match.match(line)
 
 		if m:
 			print(m.groups())
+	"""
 
 	return portsTable
 
@@ -507,7 +618,7 @@ doc = {
 if args.output:
 	sys.stdout = open(args.output, "w")
 
-#print(json.dumps(doc, indent=4))
+print(json.dumps(doc, indent=4))
 
 
 
