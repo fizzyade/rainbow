@@ -225,8 +225,6 @@ def parseNextDoc(filename, arch, source):
 
 				apiTable.append(apiEntry)
 
-		#print(apiTable)
-
 		# find each api function section
 
 		for line in pageLines:
@@ -436,7 +434,7 @@ def parseNextPorts(filename):
 					bitEntry = {
 						"bit" : bitMatch.group("bit"),
 						"access" : currentAccessMode,
-						"descripton" : bitMatch.group("description")
+						"description" : bitMatch.group("description")
 
 					}
 
@@ -455,7 +453,7 @@ def parseNextPorts(filename):
 
 					bitsEntry = {
 						"access" : currentAccessMode,
-						"descripton" : bitsMatch.group("description"),
+						"description" : bitsMatch.group("description"),
 						"bits" : bitsArray
 					}
 
@@ -515,17 +513,6 @@ def parseNextPorts(filename):
 			portsTable.append(entry)
 		else:
 			lineIndex = lineIndex + 1
-
-	# a bit more specific expressions are needed to grab other information
-
-	
-	"""
-	for line in lines:
-		m = dac_match.match(line)
-
-		if m:
-			print(m.groups())
-	"""
 
 	return portsTable
 
@@ -600,6 +587,31 @@ systemVariablesTable = parseSystemVariables("./sources/Spectrum+3_V4-0_ROM2.asm"
 # scrape the Next ports
 
 portsTable += parseNextPorts("./sources/ports.txt")
+
+# use helper to post process
+
+fp = open("./helper.json", "r")
+
+if fp:
+	helperDoc = json.load(fp)
+
+	portHelperTable = helperDoc["PORTS"]
+
+	for port in portsTable:
+		for helper in portHelperTable:
+			port["name"] = re.sub(helper["match"], helper["replace"], port["name"])
+		if "fields" in port:
+			fields = port["fields"]
+			for field in fields:
+				if "mask" in field:
+					masks = field["mask"]
+					for mask in masks:
+						for helper in portHelperTable:
+							mask["description"] = re.sub(helper["match"], helper["replace"], mask["description"])
+
+				for helper in portHelperTable:
+						field["description"] = re.sub(helper["match"], helper["replace"], field["description"])
+						#print("old: [" + field["description"]+"] new: ["+re.sub(helper["match"], helper["replace"], field["description"])+"]")
 
 # create JSON output
 

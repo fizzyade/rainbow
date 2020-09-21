@@ -1,0 +1,82 @@
+{
+	"PORTS": [
+		{
+			"match": "(?i)^.*for\\s(?P<button>.*)\\sbutton\\spress$",
+			"replace": "BUTTON \\g<button>"
+		},
+		{
+			"match": "(?i)^(?P<button>fire\\s[1-2]).*$",
+			"replace":"BUTTON \\g<button>"
+		},
+		{
+			"match": "(?i)^.*\\[md\\s=\\s(?P<button>.*)\\].*$",
+			"replace":"BUTTON \\g<button>"
+		},
+		{
+			"match": "(?i)^1\\sfor\\s(?P<button>[a-z|0-9]*)\\s.*$",
+			"replace":"BUTTON \\g<button>"
+		},
+		{
+			"match": "(?i)^1.*sprites.*exceeded.*$",
+			"replace":"MAX SPRITES EXCEEDED"
+		},
+		{
+			"match": "(?i)^1.*sprites.*collided.*$",
+			"replace":"SPRITES COLLIDED"
+		},
+		{
+			"match": "(?i)^.*sets\\s(?P<type>current\\s[a-z]*)\\s.*$",
+			"replace":"SET \\g<type> INDEX"
+		},
+		{
+			"match": "(?i)^(?P<select>[a-z]*)\\s7-bits.*$",
+			"replace":"PRESCALER \\g<select>"
+		},
+		{
+			"match": "(?i)^(?P<button>up|down|left|right)\\s.*",
+			"replace":"BUTTON \\g<button>"
+		},
+		{
+			"match": "(?i)^(?P<mode>AY\\s[0-9]\\s([a-z|\\s])*).*",
+			"replace":"\\g<mode>"
+		},
+		{
+			"match": "(?i)^(?P<joy>Kempston\\sjoy\\s[0-9]).*",
+			"replace":"\\g<joy>"
+		},
+		{
+			"match": "(?i)^(?P<mouse>mouse.*position).*",
+			"replace":"\\g<mouse>"
+		},
+		{
+			"match": "(?i)^(?P<value>.*)\\s\\=\\s.*",
+			"replace":"\\g<value>"	
+		},
+		{
+			"match": "(?i)ULA\\+",
+			"replace":"ULAPLUS"	
+		},
+		{
+			"match": "(?i)state of i2c.*",
+			"replace":"STATE"	
+			
+		},
+		{
+			"match": "(?i)^(?P<screen>screen\\s[0-1]).*",
+			"replace":"\\g<screen>"				
+		},
+		{
+			"match": "(?i)^(?P<hi>hi\\-[a-z]*)\\,.*",
+			"replace":"\\g<hi>"			
+		},
+		{
+			"match": "(?i)^(?P<value>[a-z]*\\s(in|out)).*",
+			"replace":"\\g<value>"				
+		},
+		{
+			"match": "(?i)^(?P<value>key\\scolumn).*",
+			"replace":"\\g<value>"	
+			
+		}
+	]
+}

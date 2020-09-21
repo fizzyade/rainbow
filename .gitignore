@@ -1,4 +1,4 @@
 sources
-*.json
+next.json
 
 .DS_Store
